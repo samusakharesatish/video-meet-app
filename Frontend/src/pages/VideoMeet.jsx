@@ -229,7 +229,7 @@ export default function VideoMeet() {
           onChange={(e) => setUsername(e.target.value)}
         />
 
-        <button onClick={connect} className="bg-blue-600 px-6 py-2 rounded">
+        <button onClick={connect} className="bg-red-500 px-6 py-2 rounded">
           Join
         </button>
 
