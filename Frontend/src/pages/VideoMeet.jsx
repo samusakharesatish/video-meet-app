@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import io from "socket.io-client";
+import server from "../environment";
 
-const server_url = "server";
+const server_url = server;
 
 const peerConfigConnections = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
