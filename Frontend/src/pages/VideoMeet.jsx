@@ -1,3 +1,4 @@
+// SAME IMPORTS
 import React, { useEffect, useRef, useState } from "react";
 import io from "socket.io-client";
 import server from "../environment";
@@ -14,9 +15,8 @@ export default function VideoMeet() {
   const socketRef = useRef();
   const socketIdRef = useRef();
 
-  // ✅ FIX: separate refs
-  const localVideoRef = useRef();      // meeting screen
-  const previewVideoRef = useRef();    // join screen
+  const localVideoRef = useRef();
+  const previewVideoRef = useRef();
 
   const [username, setUsername] = useState("");
   const [askUsername, setAskUsername] = useState(true);
@@ -43,17 +43,15 @@ export default function VideoMeet() {
 
       window.localStream = stream;
 
-      // ✅ attach to preview (join screen)
       if (previewVideoRef.current) {
         previewVideoRef.current.srcObject = stream;
       }
-
     } catch (err) {
       console.log(err);
     }
   };
 
-  // ✅ FIX: attach stream AFTER joining
+  // attach after join
   useEffect(() => {
     if (!askUsername && window.localStream && localVideoRef.current) {
       localVideoRef.current.srcObject = window.localStream;
@@ -80,6 +78,8 @@ export default function VideoMeet() {
 
       socketRef.current.on("user-joined", (id, clients) => {
         clients.forEach((socketListId) => {
+          if (connections[socketListId]) return;
+
           connections[socketListId] = new RTCPeerConnection(
             peerConfigConnections
           );
@@ -135,6 +135,14 @@ export default function VideoMeet() {
     });
   };
 
+  // cleanup (🔥 important)
+  useEffect(() => {
+    return () => {
+      if (socketRef.current) socketRef.current.disconnect();
+      connections = {};
+    };
+  }, []);
+
   const gotMessageFromServer = (fromId, message) => {
     let signal = JSON.parse(message);
 
@@ -162,7 +170,7 @@ export default function VideoMeet() {
       }
 
       if (signal.ice) {
-        connections[fromId].addIceCandidate(
+        connections[fromId]?.addIceCandidate(
           new RTCIceCandidate(signal.ice)
         );
       }
@@ -193,7 +201,7 @@ export default function VideoMeet() {
           .getSenders()
           .find((s) => s.track.kind === "video");
 
-        sender.replaceTrack(screenTrack);
+        sender?.replaceTrack(screenTrack);
       }
 
       screenTrack.onended = () => setScreen(false);
@@ -205,7 +213,6 @@ export default function VideoMeet() {
     window.location.href = "/";
   };
 
-  // ================= CHAT =================
   const sendMessage = () => {
     socketRef.current.emit("chat-message", message, username);
     setMessage("");
@@ -219,27 +226,26 @@ export default function VideoMeet() {
   // ================= UI =================
   if (askUsername) {
     return (
-      <div className="h-screen flex flex-col items-center justify-center bg-gray-900 text-white gap-4">
+      <div className="h-screen flex flex-col items-center justify-center bg-gray-900 text-white gap-4 px-4">
         <h2 className="text-2xl font-semibold">Join Meeting</h2>
 
         <input
-          className="px-4 py-2 rounded bg-gray-800 border border-gray-600"
+          className="px-4 py-2 rounded bg-gray-800 border border-gray-600 w-full max-w-sm"
           placeholder="Enter username"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
         />
 
-        <button onClick={connect} className="bg-red-500 px-6 py-2 rounded">
+        <button onClick={connect} className="bg-red-500 px-6 py-2 rounded w-full max-w-sm">
           Join
         </button>
 
-        {/* ✅ preview video */}
         <video
           ref={previewVideoRef}
           autoPlay
           muted
           playsInline
-          className="w-64 rounded mt-4 bg-black"
+          className="w-full max-w-sm rounded mt-4 bg-black"
         />
       </div>
     );
@@ -250,18 +256,16 @@ export default function VideoMeet() {
       {/* HEADER */}
       <div className="p-4 flex justify-between bg-gray-800">
         <h1>{username}</h1>
-        <button
-          onClick={handleEndCall}
-          className="bg-red-600 px-4 py-2 rounded"
-        >
+        <button onClick={handleEndCall} className="bg-red-600 px-4 py-2 rounded">
           Leave
         </button>
       </div>
 
       {/* MAIN */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 flex-col md:flex-row overflow-hidden">
+        
         {/* VIDEO */}
-        <div className="flex-1 p-4 grid grid-cols-3 gap-4 overflow-auto">
+        <div className="flex-1 p-2 md:p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-4 overflow-auto">
           <video
             ref={localVideoRef}
             autoPlay
@@ -284,12 +288,10 @@ export default function VideoMeet() {
         </div>
 
         {/* CHAT */}
-        <div className="w-80 bg-gray-800 flex flex-col border-l border-gray-700">
-          <div className="p-3 font-semibold border-b border-gray-700">
-            Chat
-          </div>
+        <div className="w-full md:w-80 bg-gray-800 flex flex-col border-t md:border-l md:border-t-0 border-gray-700">
+          <div className="p-3 font-semibold border-b border-gray-700">Chat</div>
 
-          <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          <div className="flex-1 overflow-y-auto p-3 space-y-2 max-h-40 md:max-h-full">
             {messages.map((m, i) => (
               <div key={i}>
                 <strong>{m.sender}:</strong> {m.data}
@@ -311,7 +313,7 @@ export default function VideoMeet() {
       </div>
 
       {/* CONTROLS */}
-      <div className="p-4 flex justify-center gap-4 bg-gray-800">
+      <div className="p-4 flex flex-wrap justify-center gap-2 md:gap-4 bg-gray-800">
         <button onClick={handleVideo} className="bg-gray-700 px-4 py-2 rounded">
           {video ? "Camera Off" : "Camera On"}
         </button>
@@ -320,10 +322,7 @@ export default function VideoMeet() {
           {audio ? "Mic Off" : "Mic On"}
         </button>
 
-        <button
-          onClick={handleScreen}
-          className="bg-indigo-600 px-4 py-2 rounded"
-        >
+        <button onClick={handleScreen} className="bg-indigo-600 px-4 py-2 rounded">
           Share Screen
         </button>
       </div>
