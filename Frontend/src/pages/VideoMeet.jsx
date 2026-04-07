@@ -1,4 +1,3 @@
-// SAME IMPORTS
 import React, { useEffect, useRef, useState } from "react";
 import io from "socket.io-client";
 import server from "../environment";
@@ -29,7 +28,8 @@ export default function VideoMeet() {
   const [audio, setAudio] = useState(true);
   const [screen, setScreen] = useState(false);
 
-  // ================= PERMISSIONS =================
+  const [showChat, setShowChat] = useState(false); // ✅ NEW
+
   useEffect(() => {
     getPermissions();
   }, []);
@@ -51,14 +51,12 @@ export default function VideoMeet() {
     }
   };
 
-  // attach after join
   useEffect(() => {
     if (!askUsername && window.localStream && localVideoRef.current) {
       localVideoRef.current.srcObject = window.localStream;
     }
   }, [askUsername]);
 
-  // ================= SOCKET =================
   const connectToSocketServer = () => {
     socketRef.current = io.connect(server_url);
 
@@ -135,10 +133,9 @@ export default function VideoMeet() {
     });
   };
 
-  // cleanup (🔥 important)
   useEffect(() => {
     return () => {
-      if (socketRef.current) socketRef.current.disconnect();
+      socketRef.current?.disconnect();
       connections = {};
     };
   }, []);
@@ -149,7 +146,7 @@ export default function VideoMeet() {
     if (fromId !== socketIdRef.current) {
       if (signal.sdp) {
         connections[fromId]
-          .setRemoteDescription(new RTCSessionDescription(signal.sdp))
+          ?.setRemoteDescription(new RTCSessionDescription(signal.sdp))
           .then(() => {
             if (signal.sdp.type === "offer") {
               connections[fromId].createAnswer().then((description) => {
@@ -177,7 +174,6 @@ export default function VideoMeet() {
     }
   };
 
-  // ================= CONTROLS =================
   const handleVideo = () => {
     window.localStream.getVideoTracks()[0].enabled = !video;
     setVideo(!video);
@@ -256,13 +252,23 @@ export default function VideoMeet() {
       {/* HEADER */}
       <div className="p-4 flex justify-between bg-gray-800">
         <h1>{username}</h1>
-        <button onClick={handleEndCall} className="bg-red-600 px-4 py-2 rounded">
-          Leave
-        </button>
+
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowChat(!showChat)}
+            className="bg-blue-600 px-3 py-1 rounded md:hidden"
+          >
+            Chat
+          </button>
+
+          <button onClick={handleEndCall} className="bg-red-600 px-4 py-2 rounded">
+            Leave
+          </button>
+        </div>
       </div>
 
       {/* MAIN */}
-      <div className="flex flex-1 flex-col md:flex-row overflow-hidden">
+      <div className="flex flex-1 overflow-hidden relative">
         
         {/* VIDEO */}
         <div className="flex-1 p-2 md:p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-4 overflow-auto">
@@ -288,10 +294,19 @@ export default function VideoMeet() {
         </div>
 
         {/* CHAT */}
-        <div className="w-full md:w-80 bg-gray-800 flex flex-col border-t md:border-l md:border-t-0 border-gray-700">
+        <div className={`
+          fixed md:static bottom-0 right-0
+          w-full md:w-80
+          h-[70%] md:h-auto
+          bg-gray-800
+          flex flex-col
+          border-l border-gray-700
+          transform transition-transform duration-300
+          ${showChat ? "translate-y-0" : "translate-y-full md:translate-y-0"}
+        `}>
           <div className="p-3 font-semibold border-b border-gray-700">Chat</div>
 
-          <div className="flex-1 overflow-y-auto p-3 space-y-2 max-h-40 md:max-h-full">
+          <div className="flex-1 overflow-y-auto p-3 space-y-2">
             {messages.map((m, i) => (
               <div key={i}>
                 <strong>{m.sender}:</strong> {m.data}
@@ -305,7 +320,7 @@ export default function VideoMeet() {
               value={message}
               onChange={(e) => setMessage(e.target.value)}
             />
-            <button onClick={sendMessage} className="bg-blue-600 px-4 rounded">
+            <button onClick={sendMessage} className="bg-red-500 px-4 rounded">
               Send
             </button>
           </div>
