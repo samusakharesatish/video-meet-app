@@ -1,222 +1,312 @@
 import React, { useEffect, useRef, useState } from "react";
 import io from "socket.io-client";
 
-const SERVER_URL = "http://localhost:8080";
+const server_url = "http://localhost:8080";
+
+const peerConfigConnections = {
+  iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+};
+
+var connections = {};
 
 export default function VideoMeet() {
+  const socketRef = useRef();
+  const socketIdRef = useRef();
+  const localVideoRef = useRef();
 
-  const socketRef = useRef(null);
-  const localVideoRef = useRef(null);
+  const [username, setUsername] = useState("");
+  const [askUsername, setAskUsername] = useState(true);
 
-  const [roomId, setRoomId] = useState("");
-  const [joined, setJoined] = useState(false);
-  const [stream, setStream] = useState(null);
-
-  const [cameraOn, setCameraOn] = useState(true);
-  const [micOn, setMicOn] = useState(true);
-
-  const [chat, setChat] = useState([]);
+  const [videos, setVideos] = useState([]);
+  const [messages, setMessages] = useState([]);
   const [message, setMessage] = useState("");
 
-  const [permissionError, setPermissionError] = useState("");
+  const [video, setVideo] = useState(true);
+  const [audio, setAudio] = useState(true);
+  const [screen, setScreen] = useState(false);
 
-  // ✅ CHECK PERMISSIONS
-  const checkPermissions = async () => {
+  // ================= PERMISSIONS =================
+  useEffect(() => {
+    getPermissions();
+  }, []);
+
+  const getPermissions = async () => {
     try {
-      const cam = await navigator.permissions.query({ name: "camera" });
-      const mic = await navigator.permissions.query({ name: "microphone" });
-
-      if (cam.state === "denied" || mic.state === "denied") {
-        setPermissionError("Camera/Microphone permission denied");
-        return false;
-      }
-
-      return true;
-    } catch {
-      return true; // fallback (some browsers don’t support permissions API)
-    }
-  };
-
-  // ✅ JOIN MEETING
-  const joinMeeting = async () => {
-    setPermissionError("");
-
-    const hasPermission = await checkPermissions();
-
-    if (!hasPermission) return;
-
-    try {
-      const localStream = await navigator.mediaDevices.getUserMedia({
+      const stream = await navigator.mediaDevices.getUserMedia({
         video: true,
         audio: true
       });
 
-      setStream(localStream);
-
+      window.localStream = stream;
       if (localVideoRef.current) {
-        localVideoRef.current.srcObject = localStream;
+        localVideoRef.current.srcObject = stream;
       }
-
-      socketRef.current = io(SERVER_URL);
-
-      socketRef.current.emit("join-room", roomId);
-
-      socketRef.current.on("chat-message", msg => {
-        setChat(prev => [...prev, msg]);
-      });
-
-      setJoined(true);
-
     } catch (err) {
-      console.error(err);
-      setPermissionError("Please allow camera & microphone access");
+      console.log(err);
     }
   };
 
-  // ✅ TOGGLE CAMERA
-  const toggleCamera = () => {
-    if (!stream) return;
+  // ================= SOCKET =================
+  const connectToSocketServer = () => {
+    socketRef.current = io.connect(server_url);
 
-    const track = stream.getVideoTracks()[0];
-    track.enabled = !track.enabled;
-    setCameraOn(track.enabled);
+    socketRef.current.on("signal", gotMessageFromServer);
+
+    socketRef.current.on("connect", () => {
+      socketRef.current.emit("join-call", window.location.href);
+      socketIdRef.current = socketRef.current.id;
+
+      socketRef.current.on("chat-message", (data, sender) => {
+        setMessages(prev => [...prev, { sender, data }]);
+      });
+
+      socketRef.current.on("user-left", id => {
+        setVideos(videos => videos.filter(v => v.socketId !== id));
+      });
+
+      socketRef.current.on("user-joined", (id, clients) => {
+        clients.forEach(socketListId => {
+          connections[socketListId] = new RTCPeerConnection(
+            peerConfigConnections
+          );
+
+          connections[socketListId].onicecandidate = event => {
+            if (event.candidate) {
+              socketRef.current.emit(
+                "signal",
+                socketListId,
+                JSON.stringify({ ice: event.candidate })
+              );
+            }
+          };
+
+          connections[socketListId].ontrack = event => {
+            let stream = event.streams[0];
+
+            setVideos(prev => {
+              const exists = prev.find(v => v.socketId === socketListId);
+              if (exists) {
+                return prev.map(v =>
+                  v.socketId === socketListId
+                    ? { ...v, stream }
+                    : v
+                );
+              } else {
+                return [...prev, { socketId: socketListId, stream }];
+              }
+            });
+          };
+
+          if (window.localStream) {
+            window.localStream.getTracks().forEach(track => {
+              connections[socketListId].addTrack(track, window.localStream);
+            });
+          }
+        });
+
+        if (id === socketIdRef.current) {
+          for (let id2 in connections) {
+            if (id2 === socketIdRef.current) continue;
+
+            connections[id2]
+              .createOffer()
+              .then(description => {
+                connections[id2].setLocalDescription(description).then(() => {
+                  socketRef.current.emit(
+                    "signal",
+                    id2,
+                    JSON.stringify({ sdp: connections[id2].localDescription })
+                  );
+                });
+              });
+          }
+        }
+      });
+    });
   };
 
-  // ✅ TOGGLE MIC
-  const toggleMic = () => {
-    if (!stream) return;
+  const gotMessageFromServer = (fromId, message) => {
+    let signal = JSON.parse(message);
 
-    const track = stream.getAudioTracks()[0];
-    track.enabled = !track.enabled;
-    setMicOn(track.enabled);
+    if (fromId !== socketIdRef.current) {
+      if (signal.sdp) {
+        connections[fromId]
+          .setRemoteDescription(new RTCSessionDescription(signal.sdp))
+          .then(() => {
+            if (signal.sdp.type === "offer") {
+              connections[fromId]
+                .createAnswer()
+                .then(description => {
+                  connections[fromId]
+                    .setLocalDescription(description)
+                    .then(() => {
+                      socketRef.current.emit(
+                        "signal",
+                        fromId,
+                        JSON.stringify({
+                          sdp: connections[fromId].localDescription
+                        })
+                      );
+                    });
+                });
+            }
+          });
+      }
+
+      if (signal.ice) {
+        connections[fromId].addIceCandidate(
+          new RTCIceCandidate(signal.ice)
+        );
+      }
+    }
   };
 
-  // ✅ SCREEN SHARE
-  const shareScreen = async () => {
-    try {
-      const screenStream = await navigator.mediaDevices.getDisplayMedia({
+  // ================= CONTROLS =================
+  const handleVideo = () => {
+    window.localStream.getVideoTracks()[0].enabled = !video;
+    setVideo(!video);
+  };
+
+  const handleAudio = () => {
+    window.localStream.getAudioTracks()[0].enabled = !audio;
+    setAudio(!audio);
+  };
+
+  const handleScreen = async () => {
+    if (!screen) {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
         video: true
       });
 
-      const screenTrack = screenStream.getTracks()[0];
+      let screenTrack = stream.getTracks()[0];
 
-      const sender = socketRef.current?.peerConnection
-        ?.getSenders()
-        ?.find(s => s.track.kind === "video");
+      for (let id in connections) {
+        let sender = connections[id]
+          .getSenders()
+          .find(s => s.track.kind === "video");
 
-      if (sender) sender.replaceTrack(screenTrack);
+        sender.replaceTrack(screenTrack);
+      }
 
-    } catch (err) {
-      console.log("Screen share cancelled");
+      screenTrack.onended = () => setScreen(false);
+      setScreen(true);
     }
   };
 
-  // ✅ CHAT
+  const handleEndCall = () => {
+    window.location.href = "/";
+  };
+
+  // ================= CHAT =================
   const sendMessage = () => {
-    if (!message.trim()) return;
-
-    const msg = {
-      text: message,
-      time: new Date().toLocaleTimeString()
-    };
-
-    socketRef.current.emit("chat-message", msg);
-
-    setChat(prev => [...prev, msg]);
+    socketRef.current.emit("chat-message", message, username);
     setMessage("");
   };
 
-  // ✅ LEAVE
-  const leaveMeeting = () => {
-    stream?.getTracks().forEach(track => track.stop());
-    socketRef.current?.disconnect();
-
-    setJoined(false);
-    setStream(null);
+  const connect = () => {
+    setAskUsername(false);
+    connectToSocketServer();
   };
 
-  useEffect(() => {
-    return () => {
-      stream?.getTracks().forEach(track => track.stop());
-      socketRef.current?.disconnect();
-    };
-  }, [stream]);
-
-  // 🔵 LOBBY
-  if (!joined) {
+  // ================= UI =================
+  if (askUsername) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-100">
+      <div className="h-screen flex flex-col items-center justify-center bg-gray-900 text-white gap-4">
+        <h2 className="text-2xl font-semibold">Join Meeting</h2>
 
-        <div className="bg-white shadow-xl rounded-xl p-8 w-96">
+        <input
+          className="px-4 py-2 rounded bg-gray-800 border border-gray-600"
+          placeholder="Enter username"
+          value={username}
+          onChange={e => setUsername(e.target.value)}
+        />
 
-          <h2 className="text-2xl font-semibold text-center mb-4">
-            Join Meeting
-          </h2>
+        <button onClick={connect} className="bg-blue-600 px-6 py-2 rounded">
+          Join
+        </button>
 
-          {permissionError && (
-            <p className="text-red-500 text-sm mb-3 text-center">
-              {permissionError}
-            </p>
-          )}
-
-          <input
-            type="text"
-            placeholder="Enter Room ID"
-            value={roomId}
-            onChange={e => setRoomId(e.target.value)}
-            className="w-full border rounded-lg px-4 py-2 mb-4"
-          />
-
-          <button
-            onClick={joinMeeting}
-            className="w-full bg-blue-600 text-white py-2 rounded-lg"
-          >
-            Join Meeting
-          </button>
-
-        </div>
+        <video ref={localVideoRef} autoPlay muted className="w-64 rounded mt-4" />
       </div>
     );
   }
 
-  // 🟢 MAIN UI
   return (
     <div className="h-screen flex flex-col bg-gray-900 text-white">
 
       {/* HEADER */}
       <div className="p-4 flex justify-between bg-gray-800">
-        <h1>Room: {roomId}</h1>
-        <button onClick={leaveMeeting} className="bg-red-600 px-4 py-2 rounded">
+        <h1>{username}</h1>
+        <button onClick={handleEndCall} className="bg-red-600 px-4 py-2 rounded">
           Leave
         </button>
       </div>
 
-      {/* VIDEO */}
-      <div className="flex-1 p-4">
-        <video
-          ref={localVideoRef}
-          autoPlay
-          muted
-          playsInline
-          className="w-full rounded bg-black"
-        />
+      {/* MAIN CONTENT */}
+      <div className="flex flex-1 overflow-hidden">
+
+        {/* LEFT → VIDEOS */}
+        <div className="flex-1 p-4 grid grid-cols-3 gap-4 overflow-auto">
+          <video
+            ref={localVideoRef}
+            autoPlay
+            muted
+            className="w-full bg-black rounded"
+          />
+
+          {videos.map(v => (
+            <video
+              key={v.socketId}
+              autoPlay
+              ref={ref => {
+                if (ref && v.stream) ref.srcObject = v.stream;
+              }}
+              className="w-full bg-black rounded"
+            />
+          ))}
+        </div>
+
+        {/* RIGHT → CHAT */}
+        <div className="w-80 bg-gray-800 flex flex-col border-l border-gray-700">
+          
+          <div className="p-3 font-semibold border-b border-gray-700">
+            Chat
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-3 space-y-2">
+            {messages.map((m, i) => (
+              <div key={i}>
+                <strong>{m.sender}:</strong> {m.data}
+              </div>
+            ))}
+          </div>
+
+          <div className="p-3 flex gap-2 border-t border-gray-700">
+            <input
+              className="flex-1 px-3 py-2 rounded bg-gray-700"
+              value={message}
+              onChange={e => setMessage(e.target.value)}
+            />
+            <button onClick={sendMessage} className="bg-blue-600 px-4 rounded">
+              Send
+            </button>
+          </div>
+        </div>
+
       </div>
 
       {/* CONTROLS */}
       <div className="p-4 flex justify-center gap-4 bg-gray-800">
-
-        <button onClick={toggleCamera} className="bg-gray-700 px-4 py-2 rounded">
-          {cameraOn ? "Camera Off" : "Camera On"}
+        <button onClick={handleVideo} className="bg-gray-700 px-4 py-2 rounded">
+          {video ? "Camera Off" : "Camera On"}
         </button>
 
-        <button onClick={toggleMic} className="bg-gray-700 px-4 py-2 rounded">
-          {micOn ? "Mic Off" : "Mic On"}
+        <button onClick={handleAudio} className="bg-gray-700 px-4 py-2 rounded">
+          {audio ? "Mic Off" : "Mic On"}
         </button>
 
-        <button onClick={shareScreen} className="bg-indigo-600 px-4 py-2 rounded">
+        <button onClick={handleScreen} className="bg-indigo-600 px-4 py-2 rounded">
           Share Screen
         </button>
-
       </div>
     </div>
   );

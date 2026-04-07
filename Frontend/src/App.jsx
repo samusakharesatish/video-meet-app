@@ -1,26 +1,35 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import Landing from "./pages/Landing";
-import Home from "./pages/Home";
-import Authentication from "./pages/Authentication";
-import { AuthProvider } from "./contexts/AuthContext";
-import VideoMeetComponent from "./pages/VideoMeet";
-
-
-
+import './App.css';
+import { Route, BrowserRouter as Router, Routes } from 'react-router-dom';
+import Landing from './pages/Landing';
+import Authentication from './pages/Authentication';
+import { AuthProvider } from './contexts/AuthContext';
+import VideoMeetComponent from './pages/VideoMeet';
+import Home from './pages/Home';
+import History from './pages/history';
 
 function App() {
   return (
-    <BrowserRouter>
-    <AuthProvider>
-      <Routes>
-        <Route path="/" element={<Landing />} />
-        <Route path="/home" element={<Home />} />
-        <Route path="/auth" element={<Authentication />} />        
-        <Route path="/:url" element={<VideoMeetComponent/>} />        
+    <div className="App">
 
-      </Routes>
-      </AuthProvider>
-    </BrowserRouter>
+      <Router>
+
+        <AuthProvider>
+
+
+          <Routes>
+
+            <Route path='/' element={<Landing/>} />
+
+            <Route path='/auth' element={<Authentication />} />
+
+            <Route path='/home's element={<Home/>} />
+            <Route path='/history' element={<History />} />
+            <Route path='/:url' element={<VideoMeetComponent />} />
+          </Routes>
+        </AuthProvider>
+
+      </Router>
+    </div>
   );
 }
 

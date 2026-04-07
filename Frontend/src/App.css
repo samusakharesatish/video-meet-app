@@ -1,38 +1,110 @@
-.LandingPageContainer{
+/* 🔥 ROOT CONTAINER */
+.LandingPageContainer {
+  color: white;
+  min-height: 100vh;
+  background: radial-gradient(circle at top, #111 0%, #000 100%);
+  font-family: "Poppins", sans-serif;
+}
+
+/* 🔥 NAVBAR */
+.LandingPageContainer nav {
+  padding: 1.5rem 3rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.LandingPageContainer nav h2 {
+  font-size: 1.8rem;
+  font-weight: 700;
+}
+
+/* 🔥 NAV BUTTONS */
+.navlist {
+  display: flex;
+  gap: 1.2rem;
+}
+
+.nav-btn {
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  color: #ccc;
+  transition: all 0.3s ease;
+}
+
+.nav-btn:hover {
   color: white;
 }
 
-.LandingPageContainer nav {
-  padding-inline: 1.2rem;
-  padding-block: 1.6rem;
-  display: flex;
-  justify-content: space-between;
-}
-.LandingPageContainer nav h2 {
- 
-  font-size: 1.6rem;
-  font-weight: 600;
+.nav-btn.primary {
+  background-color: #ff4d4d;
+  color: white;
 }
 
-.LandingPageContainer nav .navlist{
-  display: flex;
-  gap: 1.6rem;
-  cursor: pointer;
+.nav-btn.primary:hover {
+  background-color: #e63946;
 }
+
+/* 🔥 MAIN SECTION */
 .LandingMainContainer {
   display: flex;
   justify-content: space-between;
-  padding-inline: 3rem;
-  height: 80vh;
   align-items: center;
-
+  padding: 3rem;
+  height: calc(100vh - 80px);
+  gap: 2rem;
 }
 
-.LandingMainContainer .mobile-img img{
-    height: 60vh;
-    width: auto;
+/* 🔥 LEFT TEXT */
+.LandingMainContainer > div:first-child {
+  max-width: 500px;
 }
 
-.LandingMainContainer > div:nth-child(1) {
+.LandingMainContainer h1 {
+  font-size: 3rem;
+  line-height: 1.2;
+  font-weight: 700;
+}
 
+.LandingMainContainer p {
+  margin-top: 1rem;
+  color: #aaa;
+  font-size: 1.1rem;
+}
+
+/* 🔥 CTA BUTTON */
+.cta-btn {
+  margin-top: 1.5rem;
+  display: inline-block;
+  background-color: #ff4d4d;
+  padding: 0.8rem 1.8rem;
+  border-radius: 10px;
+  font-weight: 600;
+  transition: 0.3s ease;
+}
+
+.cta-btn:hover {
+  background-color: #e63946;
+  transform: scale(1.05);
+}
+
+/* 🔥 IMAGE */
+.mobile-img img {
+  height: 65vh;
+  max-width: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0px 10px 30px rgba(255, 0, 0, 0.2));
+}
+
+/* 🔥 RESPONSIVE */
+@media (max-width: 900px) {
+  .LandingMainContainer {
+    flex-direction: column;
+    text-align: center;
+    height: auto;
+  }
+
+  .mobile-img img {
+    height: 50vh;
+  }
 }
