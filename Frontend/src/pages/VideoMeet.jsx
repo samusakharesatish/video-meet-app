@@ -13,7 +13,10 @@ var connections = {};
 export default function VideoMeet() {
   const socketRef = useRef();
   const socketIdRef = useRef();
-  const localVideoRef = useRef();
+
+  // ✅ FIX: separate refs
+  const localVideoRef = useRef();      // meeting screen
+  const previewVideoRef = useRef();    // join screen
 
   const [username, setUsername] = useState("");
   const [askUsername, setAskUsername] = useState(true);
@@ -38,22 +41,24 @@ export default function VideoMeet() {
         audio: true,
       });
 
-      console.log("STREAM:", stream); // ✅ debug
-
       window.localStream = stream;
 
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-
-        // ✅ ADD THIS (CRITICAL FIX)
-        localVideoRef.current.onloadedmetadata = () => {
-          localVideoRef.current.play();
-        };
+      // ✅ attach to preview (join screen)
+      if (previewVideoRef.current) {
+        previewVideoRef.current.srcObject = stream;
       }
+
     } catch (err) {
       console.log(err);
     }
   };
+
+  // ✅ FIX: attach stream AFTER joining
+  useEffect(() => {
+    if (!askUsername && window.localStream && localVideoRef.current) {
+      localVideoRef.current.srcObject = window.localStream;
+    }
+  }, [askUsername]);
 
   // ================= SOCKET =================
   const connectToSocketServer = () => {
@@ -76,7 +81,7 @@ export default function VideoMeet() {
       socketRef.current.on("user-joined", (id, clients) => {
         clients.forEach((socketListId) => {
           connections[socketListId] = new RTCPeerConnection(
-            peerConfigConnections,
+            peerConfigConnections
           );
 
           connections[socketListId].onicecandidate = (event) => {
@@ -84,7 +89,7 @@ export default function VideoMeet() {
               socketRef.current.emit(
                 "signal",
                 socketListId,
-                JSON.stringify({ ice: event.candidate }),
+                JSON.stringify({ ice: event.candidate })
               );
             }
           };
@@ -96,7 +101,7 @@ export default function VideoMeet() {
               const exists = prev.find((v) => v.socketId === socketListId);
               if (exists) {
                 return prev.map((v) =>
-                  v.socketId === socketListId ? { ...v, stream } : v,
+                  v.socketId === socketListId ? { ...v, stream } : v
                 );
               } else {
                 return [...prev, { socketId: socketListId, stream }];
@@ -120,7 +125,7 @@ export default function VideoMeet() {
                 socketRef.current.emit(
                   "signal",
                   id2,
-                  JSON.stringify({ sdp: connections[id2].localDescription }),
+                  JSON.stringify({ sdp: connections[id2].localDescription })
                 );
               });
             });
@@ -148,7 +153,7 @@ export default function VideoMeet() {
                       fromId,
                       JSON.stringify({
                         sdp: connections[fromId].localDescription,
-                      }),
+                      })
                     );
                   });
               });
@@ -157,7 +162,9 @@ export default function VideoMeet() {
       }
 
       if (signal.ice) {
-        connections[fromId].addIceCandidate(new RTCIceCandidate(signal.ice));
+        connections[fromId].addIceCandidate(
+          new RTCIceCandidate(signal.ice)
+        );
       }
     }
   };
@@ -226,11 +233,13 @@ export default function VideoMeet() {
           Join
         </button>
 
+        {/* ✅ preview video */}
         <video
-          ref={localVideoRef}
+          ref={previewVideoRef}
           autoPlay
           muted
-          className="w-64 rounded mt-4"
+          playsInline
+          className="w-64 rounded mt-4 bg-black"
         />
       </div>
     );
@@ -249,15 +258,15 @@ export default function VideoMeet() {
         </button>
       </div>
 
-      {/* MAIN CONTENT */}
+      {/* MAIN */}
       <div className="flex flex-1 overflow-hidden">
-        {/* LEFT → VIDEOS */}
+        {/* VIDEO */}
         <div className="flex-1 p-4 grid grid-cols-3 gap-4 overflow-auto">
           <video
             ref={localVideoRef}
             autoPlay
             muted
-            playsInline // ✅ VERY IMPORTANT
+            playsInline
             className="w-full bg-black rounded"
           />
 
@@ -265,6 +274,7 @@ export default function VideoMeet() {
             <video
               key={v.socketId}
               autoPlay
+              playsInline
               ref={(ref) => {
                 if (ref && v.stream) ref.srcObject = v.stream;
               }}
@@ -273,9 +283,11 @@ export default function VideoMeet() {
           ))}
         </div>
 
-        {/* RIGHT → CHAT */}
+        {/* CHAT */}
         <div className="w-80 bg-gray-800 flex flex-col border-l border-gray-700">
-          <div className="p-3 font-semibold border-b border-gray-700">Chat</div>
+          <div className="p-3 font-semibold border-b border-gray-700">
+            Chat
+          </div>
 
           <div className="flex-1 overflow-y-auto p-3 space-y-2">
             {messages.map((m, i) => (
